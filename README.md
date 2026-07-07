@@ -1,17 +1,41 @@
 # HADR Monitor
 
-A monitoring agent for humanitarian assistance and disaster response (HADR).
+## What is HADR?
 
-## The end state
+**HADR** stands for **Humanitarian Assistance and Disaster Response** — the
+coordinated effort to deliver aid and relief when disasters strike: earthquakes,
+cyclones, floods, volcanic eruptions, droughts, wildfires. Governments,
+militaries, UN agencies and NGOs all run HADR operations, and they all share the
+same first problem: **knowing what just happened**.
 
-By Wednesday afternoon this repository contains an agent that:
+That situational awareness comes from public disaster feeds. This repository
+works with three of them (documented in `feeds/`):
 
-- watches live disaster feeds — GDACS, USGS and ReliefWeb (see `feeds/`)
-- filters out the noise and assesses what remains: what happened, where, how bad, who is affected
-- publishes a morning situation report to `dashboard.html` at 08:30 Singapore time
+- **GDACS** — the Global Disaster Alert and Coordination System (EU/UN),
+  a multi-hazard feed where every event carries a colour-coded alert level
+- **USGS** — real-time earthquake data from the United States Geological
+  Survey, regenerated every minute
+- **ReliefWeb** — UN OCHA's curated humanitarian information service, slower
+  but human-verified
+
+The raw feeds are noisy: hundreds of minor earthquakes a day, duplicate alerts,
+events with no humanitarian impact. Someone — or something — has to filter,
+assess and summarise them before a responder can act. That is what this project
+builds.
+
+## What you will build
+
+A monitoring agent that:
+
+- watches the live GDACS, USGS and ReliefWeb feeds
+- filters out the noise and assesses what remains: what happened, where, how
+  bad, who is affected
+- publishes a morning situation report to `dashboard.html` at 08:30 Singapore
+  time
 - runs on a schedule, unattended, and stays quiet when nothing has changed
 
-How it does any of that is not specified anywhere in this repository. That is the course.
+How it does any of that is not specified anywhere in this repository. That is
+the course.
 
 ## The three days
 
