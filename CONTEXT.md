@@ -114,13 +114,18 @@ JSON files committed to the repo by each run — `state/events.json` (seen
 events, what was reported when, at what severity) and `state/raw/` (latest
 raw fetch per feed, overwritten each run). Git history is the audit trail.
 
-## Stack & LLM (ADR-0006)
+## Stack & LLM (ADR-0006, amended)
 
 Python pipeline: fetch → rules → dedup → LLM assessment → render HTML.
-The LLM is reached through an **OpenAI-compatible endpoint** (self-hosted
-vLLM; an OpenCode endpoint is the fallback — either way an internet-
-reachable base URL + API key, held as Actions secrets). The LLM is confined
-to one seam: assessing candidates and writing summaries. Everything else is
+The LLM is **`qwen3.7-max` on OpenCode Zen** via the Anthropic-style
+Messages endpoint (`https://opencode.ai/zen/go/v1/messages`,
+`x-api-key: $OPENCODE_API_KEY` — key kept in `.env` locally, Actions
+secret in CI). Structured output via a `submit_assessments` tool with
+auto tool choice (forced tool choice is unsupported); HTTP via
+requests/httpx (stdlib urllib is blocked). Verified by Spike S1
+(`docs/shaping/spike-llm-endpoint.md`): 4/4 schema-valid trials at the
+40-candidate batch size, 59–98 s per call. The LLM is confined to one
+seam: assessing candidates and writing summaries. Everything else is
 deterministic and testable without it.
 
 ## Slice plan
@@ -141,6 +146,5 @@ deterministic and testable without it.
 
 ## Known open items
 
-- Exact LLM model name / context window — treat as configuration.
 - ReliefWeb API appname approval — pending; RSS meanwhile.
 - Threshold tuning — revisit constants after a week of real reports.

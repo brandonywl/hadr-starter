@@ -8,4 +8,4 @@ Decisions from the 2026-07-08 grilling session (see `QUESTIONS.md` and
 - [ADR-0003](0003-daily-sitrep-semantics.md) — Always-publish daily SitRep with corrections and archive
 - [ADR-0004](0004-runtime-github-actions-fetch-at-report.md) — GitHub Actions cron, fetch-at-report, partial-publish degradation
 - [ADR-0005](0005-state-as-json-in-repo.md) — State as JSON files committed to the repo
-- [ADR-0006](0006-python-openai-compatible-llm-seam.md) — Python pipeline; LLM via OpenAI-compatible endpoint at one seam
+- [ADR-0006](0006-python-openai-compatible-llm-seam.md) — Python pipeline; LLM via hosted endpoint at one seam (amended: OpenCode Zen / qwen3.7-max, Anthropic-style API)

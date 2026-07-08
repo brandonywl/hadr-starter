@@ -125,9 +125,11 @@ surface during the interview.
 - ✅ G5. (new) The LLM is a self-hosted vLLM endpoint. Is it reachable from
   GitHub-hosted Actions runners, or does the job need a self-hosted runner /
   local cron? Which model is served, and what context window?
-  **Answer:** An internet-reachable OpenAI-compatible endpoint + API key will
-  be provided either way (vLLM directly, or an OpenCode endpoint as
-  fallback). Treat base_url/api_key/model as configuration (Actions secrets).
+  **Answer (updated 2026-07-08):** OpenCode Zen selected, model
+  `qwen3.7-max`, via the Anthropic-style `/zen/go/v1/messages` endpoint;
+  key in `.env` as `OPENCODE_API_KEY` (git-ignored) and as an Actions
+  secret in CI. Verified fit by Spike S1
+  (`docs/shaping/spike-llm-endpoint.md`).
 
 ## H. Data & state
 
