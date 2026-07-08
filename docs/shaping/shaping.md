@@ -115,7 +115,185 @@ tool choice unsupported (use auto + prompt mandate), stdlib urllib blocked
 
 ## Next
 
-Shape A is selected, unflagged, and passes the fit check. Breadboard it
-(`/breadboarding`) into UI / non-UI affordances and wiring, then slice.
-Slice 1 is already agreed (QUESTIONS.md J2): USGS → rules → LLM →
-dashboard, run by hand.
+Shape A is selected, unflagged, passes the fit check, and is breadboarded
+below (Detail A). Slices live in `slices.md` (V1–V5); V1 is the pre-agreed
+first slice (QUESTIONS.md J2): USGS → rules → LLM → dashboard, run by hand.
+
+---
+
+## Detail A: Breadboard
+
+The system is a batch pipeline that publishes static HTML. The user-facing
+surface is the report pages (P1, P2); everything else runs headless in the
+pipeline (P3), kicked off by one of two triggers.
+
+### Places
+
+| # | Place | Description |
+|---|-------|-------------|
+| P1 | dashboard.html | Latest SitRep — the duty officer's morning page |
+| P2 | reports/YYYY-MM-DD.html | Immutable archive copy of one day's SitRep (same layout as P1) |
+| P3 | Pipeline run (backend) | One execution of A1→A7 on a GitHub Actions runner or local shell |
+
+### Triggers
+
+| # | Trigger | Fires |
+|---|---------|-------|
+| T1 | GitHub Actions cron (UTC, margin before 08:30 SGT) | → N1 |
+| T2 | Manual run (`python -m hadr`) | → N1 |
+
+### UI Affordances
+
+| # | Place | Affordance | Control | Wires Out | Returns To |
+|---|-------|------------|---------|-----------|------------|
+| U1 | P1 | Headline events section — severity-sorted cards: hazard, alert colour, LLM summary | render | — | — |
+| U2 | P1 | Watchlist section — one line per borderline event | render | — | — |
+| U3 | P1 | Updates & corrections section — revisions, deletions, escalations vs prior SitReps | render | — | — |
+| U4 | P1 | Feed health section; conditional "unreachable since …" banner per down feed | render | — | — |
+| U5 | P1 | Generated-at timestamp | render | — | — |
+| U6 | P1 | Archive links (one per past day) | click | → P2 | — |
+| U7 | P1 | Per-event source links (GDACS report / USGS event page / ReliefWeb entry) | click | → external | — |
+| U8 | P1 | All-quiet notice — replaces U1+U2 when no candidates | render (conditional) | — | — |
+| _sitrep | P2 | Snapshot of U1–U5, U7, U8 for that date | — | → P1 layout | — |
+
+### Data Stores
+
+| # | Place | Store | Description |
+|---|-------|-------|-------------|
+| S1 | external | USGS `all_day.geojson` | Rolling 24 h earthquake feed |
+| S2 | external | GDACS `geteventlist/EVENTS4APP` | Current multi-hazard event list |
+| S3 | external | ReliefWeb `disasters/rss.xml` | Curated disaster entries (no auth) |
+| S4 | P3 | `state/raw/*.json` | Latest raw payload per feed, overwritten each run |
+| S5 | P3 | `state/events.json` | Canonical events: source IDs, merged facts, severity, reporting history |
+| S6 | P3 | Run feed-status | Per-source fetch outcome + LLM-fallback note for this run |
+| S7 | P3 | Config — `.env` / Actions secrets (`OPENCODE_API_KEY`), endpoint URL, model, threshold + match-window constants | Read-only configuration |
+| S8 | external | Git remote (`origin/main`) | Publish target; git history is the audit trail |
+| S9 | external | OpenCode Zen `/zen/go/v1/messages` | LLM endpoint (qwen3.7-max) |
+
+### Code Affordances
+
+| # | Place | Affordance | Control | Wires Out | Returns To |
+|---|-------|------------|---------|-----------|------------|
+| N1 | P3 | `run()` — pipeline entry | call | → N2, N3, N4 | — |
+| N2 | P3 | `fetch_usgs()` — GET S1, bounded retry + backoff | call | → S4, → N5 | → N6 |
+| N3 | P3 | `fetch_gdacs()` — GET S2, bounded retry + backoff | call | → S4, → N5 | → N6 |
+| N4 | P3 | `fetch_reliefweb()` — GET S3, parse RSS + GLIDE from description HTML | call | → S4, → N5 | → N6 |
+| N5 | P3 | `record_feed_status()` | call | → S6 | — |
+| N6 | P3 | `normalize()` — per-source payload → common RawRecord dicts | call | — | → N7, → N9 |
+| N7 | P3 | `apply_rule_floor()` — threshold constants (S7) → candidates | call | — | → N8 |
+| N8 | P3 | `merge_events()` — GLIDE else geo+time match; source-precedence conflict resolution; per-source attribution | call | → S5 | → N10 |
+| N9 | P3 | `detect_changes()` — diff ALL normalized records (pre-floor) against S5: new / revised / deleted / escalated; escalations past floor re-qualify | call | → N8 (re-qualified events join candidates) | → N13 (changes list) |
+| N10 | P3 | `assess_candidates()` — the LLM seam: worst-first cap 40, prompt + `submit_assessments` tool, POST S9 via requests (key from S7) | call | → S9 | → N11 |
+| N11 | P3 | `validate_assessments()` — schema, tier enum, event-id coverage; one retry with errors appended → N10 | call | → N10 (retry), → N12 (final failure) | → N13 (assessments) |
+| N12 | P3 | `rules_only_tiering()` — fallback: floor level → tier, templated summary | call | → S6 (fallback note) | → N13 |
+| N13 | P3 | `render_sitrep()` — assessments + changes + S6 → HTML; all-quiet variant when no candidates; marks events reported in S5 | call | → P1, → P2, → S5 | — |
+| N14 | P3 | `commit_and_push()` — workflow step: commit dashboard, archive, state | call | → S8 | — |
+
+**Verification pass:** every display U (U1–U5, U8) is written by N13, whose
+inputs trace back through N11/N12 (assessments), N9 (changes), and S6
+(health) — no orphan displays. Every N has wires out and/or returns to.
+The one domain subtlety the wiring makes explicit: **N9 consumes
+pre-floor records** (from N6, not N7) — revisions and deletions of
+previously reported events must be detected even when today's record no
+longer clears the floor.
+
+### Wiring Diagram
+
+```mermaid
+flowchart TB
+    T1(["T1: Actions cron"])
+    T2(["T2: manual run"])
+
+    subgraph P3["P3: Pipeline run"]
+        N1["N1: run()"]
+        N2["N2: fetch_usgs()"]
+        N3["N3: fetch_gdacs()"]
+        N4["N4: fetch_reliefweb()"]
+        N5["N5: record_feed_status()"]
+        N6["N6: normalize()"]
+        N7["N7: apply_rule_floor()"]
+        N8["N8: merge_events()"]
+        N9["N9: detect_changes()"]
+        N10["N10: assess_candidates()"]
+        N11["N11: validate_assessments()"]
+        N12["N12: rules_only_tiering()"]
+        N13["N13: render_sitrep()"]
+        N14["N14: commit_and_push()"]
+        S4["S4: state/raw/"]
+        S5["S5: state/events.json"]
+        S6["S6: feed-status"]
+        S7["S7: config/.env"]
+    end
+
+    S1["S1: USGS API"]
+    S2["S2: GDACS API"]
+    S3["S3: ReliefWeb RSS"]
+    S8["S8: git remote"]
+    S9["S9: OpenCode Zen"]
+
+    subgraph P1["P1: dashboard.html"]
+        U1["U1: Headline events"]
+        U2["U2: Watchlist"]
+        U3["U3: Updates & corrections"]
+        U4["U4: Feed health"]
+        U5["U5: Generated-at"]
+        U6["U6: Archive links"]
+        U7["U7: Source links"]
+        U8["U8: All-quiet notice"]
+    end
+
+    subgraph P2["P2: reports/YYYY-MM-DD.html"]
+        USNAP["_sitrep snapshot"]
+    end
+
+    T1 --> N1
+    T2 --> N1
+    N1 --> N2 & N3 & N4
+    S1 -.-> N2
+    S2 -.-> N3
+    S3 -.-> N4
+    N2 --> S4
+    N3 --> S4
+    N4 --> S4
+    N2 --> N5
+    N3 --> N5
+    N4 --> N5
+    N5 --> S6
+    N2 -.-> N6
+    N3 -.-> N6
+    N4 -.-> N6
+    N6 -.-> N7
+    N6 -.->|pre-floor records| N9
+    N7 -.-> N8
+    S5 -.-> N9
+    N9 -->|re-qualified| N8
+    N8 --> S5
+    N8 -.-> N10
+    S7 -.-> N7
+    S7 -.-> N10
+    N10 --> S9
+    S9 -.-> N11
+    N11 -->|retry once| N10
+    N11 -->|final failure| N12
+    N12 --> S6
+    N11 -.->|assessments| N13
+    N12 -.->|fallback tiers| N13
+    N9 -.->|changes| N13
+    S6 -.-> N13
+    N13 --> P1
+    N13 --> P2
+    N13 -->|mark reported| S5
+    N13 --> N14
+    N14 --> S8
+    U6 --> P2
+    U7 --> EXT["External source pages"]
+
+    classDef ui fill:#ffb6c1,stroke:#d87093,color:#000
+    classDef nonui fill:#d3d3d3,stroke:#808080,color:#000
+    classDef store fill:#e6e6fa,stroke:#9370db,color:#000
+    classDef trigger fill:#98fb98,stroke:#228b22,color:#000
+    class U1,U2,U3,U4,U5,U6,U7,U8,USNAP,EXT ui
+    class N1,N2,N3,N4,N5,N6,N7,N8,N9,N10,N11,N12,N13,N14 nonui
+    class S1,S2,S3,S4,S5,S6,S7,S8,S9 store
+    class T1,T2 trigger
+```
